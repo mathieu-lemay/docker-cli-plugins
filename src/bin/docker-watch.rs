@@ -81,8 +81,18 @@ async fn watch_container_logs(query: Option<String>, tail: bool) -> Result<()> {
         loop {
             let next = match logs.try_next().await {
                 Ok(l) => l,
+                // Container not found
                 Err(Error::DockerResponseServerError {
                     status_code: 404,
+                    message: m,
+                }) => {
+                    error!("Error getting logs from container: {m}");
+                    time::sleep(time::Duration::from_secs(1)).await;
+                    break;
+                }
+                // Conflict (the container is shutting down or stopped)
+                Err(Error::DockerResponseServerError {
+                    status_code: 409,
                     message: m,
                 }) => {
                     error!("Error getting logs from container: {m}");
