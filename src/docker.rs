@@ -1,10 +1,10 @@
 use anyhow::{bail, Result};
-use bollard::query_parameters::ListContainersOptionsBuilder;
+use bollard::query_parameters::{ListContainersOptionsBuilder, ListImagesOptions};
 use bollard::Docker;
 use skim::options::SkimOptionsBuilder;
 use skim::Skim;
 
-use crate::error::{NoContainersError, NoSelectionError, Resource};
+use crate::error::{NoContainersError, NoImagesError, NoSelectionError, Resource};
 
 #[derive(Default)]
 pub struct FindContainersOptions<'a> {
@@ -29,10 +29,11 @@ pub async fn find_containers<'a>(
 
     if let Some(q) = options.query {
         builder.query(q);
-    }
 
-    if options.pre_select {
-        builder.pre_select_n(containers.len());
+        // Only pre-select when a query was provided
+        if options.pre_select {
+            builder.pre_select_n(containers.len());
+        }
     }
 
     let options = builder.build()?;
@@ -70,4 +71,64 @@ async fn get_container_names(d: &Docker, all: bool) -> Result<Vec<String>> {
     });
 
     Ok(names)
+}
+
+#[derive(Default)]
+pub struct FindImagesOptions<'a> {
+    pub query: Option<&'a str>,
+    pub multi: bool,
+    pub pre_select: bool,
+}
+
+pub async fn find_images<'a>(d: &Docker, options: FindImagesOptions<'a>) -> Result<Vec<String>> {
+    let images = get_image_tags(d).await?;
+
+    let mut builder = SkimOptionsBuilder::default();
+
+    builder.height("50%");
+    builder.multi(options.multi);
+    builder.select_1(true);
+    builder.reverse(true);
+
+    if let Some(q) = options.query {
+        builder.query(q);
+
+        // Only pre-select when a query was provided
+        if options.pre_select {
+            builder.pre_select_n(images.len());
+        }
+    }
+
+    let options = builder.build()?;
+
+    let result = Skim::run_items(options, images).map(|out| out.selected_items);
+
+    match result {
+        Ok(i) => {
+            if i.is_empty() {
+                bail!(NoSelectionError(Resource::Image));
+            }
+
+            Ok(i.iter().map(|i| i.item.text().to_string()).collect())
+        }
+        Err(e) => bail!(e),
+    }
+}
+
+async fn get_image_tags(d: &Docker) -> Result<Vec<String>> {
+    let images = d.list_images(None::<ListImagesOptions>).await?;
+
+    let tags = images.iter().fold(Vec::new(), |mut v, i| {
+        for t in &i.repo_tags {
+            v.push(t.trim_start_matches("/").to_string());
+        }
+
+        v
+    });
+
+    if tags.is_empty() {
+        bail!(NoImagesError);
+    }
+
+    Ok(tags)
 }

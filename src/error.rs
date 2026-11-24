@@ -12,6 +12,16 @@ impl Display for NoContainersError {
 }
 
 #[derive(Debug)]
+pub struct NoImagesError;
+impl Error for NoImagesError {}
+
+impl Display for NoImagesError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "No images found")
+    }
+}
+
+#[derive(Debug)]
 pub enum Resource {
     Container,
     Image,

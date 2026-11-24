@@ -1,8 +1,13 @@
 use anyhow::Result;
-use bollard::query_parameters::RemoveContainerOptionsBuilder;
+use bollard::query_parameters::{RemoveContainerOptionsBuilder, RemoveImageOptions};
 use bollard::Docker;
 use clap::{Args, CommandFactory, Parser, Subcommand};
-use docker_cli_plugins::docker::{find_containers, FindContainersOptions};
+use docker_cli_plugins::docker::{
+    find_containers,
+    find_images,
+    FindContainersOptions,
+    FindImagesOptions,
+};
 use docker_cli_plugins::prompt::prompt_yes_no;
 use docker_cli_plugins::{generate_completion, CompletionArgs, Metadata, METADATA_CMD};
 use log::{debug, info};
@@ -40,6 +45,10 @@ enum FzfCommand {
     /// Remove Container(s)
     #[command(name = "rm")]
     RemoveContainers(RemoveContainersArgs),
+
+    /// Remove Image(s)
+    #[command(name = "rmi")]
+    RemoveImages(RemoveImagesArgs),
 }
 
 #[derive(Args)]
@@ -57,6 +66,13 @@ struct RemoveContainersArgs {
     volumes: bool,
 }
 
+#[derive(Args)]
+struct RemoveImagesArgs {
+    /// Initial fzf query
+    #[arg()]
+    query: Option<String>,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     docker_cli_plugins::init_logger();
@@ -66,6 +82,7 @@ async fn main() -> Result<()> {
     match args.command {
         Commands::FuzzyFind(cmd) => match cmd {
             FzfCommand::RemoveContainers(args) => remove_containers(args).await,
+            FzfCommand::RemoveImages(args) => remove_images(args).await,
         },
         Commands::Metadata => {
             println!("{}", METADATA);
@@ -106,6 +123,33 @@ async fn remove_containers(args: RemoveContainersArgs) -> Result<()> {
     for c in containers {
         debug!("Removing container: {}", c);
         d.remove_container(&c, Some(rm_opt.clone())).await?;
+    }
+
+    Ok(())
+}
+
+async fn remove_images(args: RemoveImagesArgs) -> Result<()> {
+    let d = Docker::connect_with_defaults()?;
+
+    let opts = FindImagesOptions {
+        query: args.query.as_deref(),
+        multi: true,
+        pre_select: true,
+    };
+
+    let images = find_images(&d, opts).await?;
+
+    info!("Selected images: \n  {}", images.join("\n  "));
+
+    let confirm = prompt_yes_no("Delete images(s)", true);
+
+    if !confirm {
+        return Ok(());
+    }
+
+    for i in images {
+        debug!("Removing image: {}", i);
+        d.remove_image(&i, None::<RemoveImageOptions>, None).await?;
     }
 
     Ok(())
