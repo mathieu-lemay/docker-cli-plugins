@@ -1,3 +1,7 @@
+pub mod docker;
+pub mod error;
+pub mod prompt;
+
 use std::fmt::Display;
 use std::io;
 
