@@ -1,8 +1,8 @@
 use anyhow::Result;
 use bollard::plugin::ContainerSummary;
 use bollard::{query_parameters, Docker};
-use clap::{Parser, Subcommand};
-use docker_cli_plugins::{Metadata, METADATA_CMD};
+use clap::{CommandFactory, Parser, Subcommand};
+use docker_cli_plugins::{generate_completion, CompletionArgs, Metadata, METADATA_CMD};
 use tabled::settings::Style;
 use tabled::{Table, Tabled};
 
@@ -14,7 +14,7 @@ const METADATA: Metadata = Metadata {
 };
 
 #[derive(Parser)]
-#[command(about, version)]
+#[command(name = "docker-psf", about, version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -22,15 +22,17 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Get the plugin metadata
-    #[command(name = METADATA_CMD)]
-    Metadata,
     /// List containers
     Psf {
         /// Show all containers (default shows just running)
         #[arg(short, long)]
         all: bool,
     },
+    /// Get the plugin metadata
+    #[command(name = METADATA_CMD)]
+    Metadata,
+    /// Generate shell completion
+    Completion(CompletionArgs),
 }
 
 #[tokio::main]
@@ -38,11 +40,15 @@ async fn main() -> Result<()> {
     let args = Cli::parse();
 
     match args.command {
+        Commands::Psf { all } => list_containers(all).await,
         Commands::Metadata => {
             println!("{}", METADATA);
             Ok(())
         }
-        Commands::Psf { all } => list_containers(all).await,
+        Commands::Completion(args) => {
+            generate_completion(Cli::command(), args.shell);
+            Ok(())
+        }
     }
 }
 

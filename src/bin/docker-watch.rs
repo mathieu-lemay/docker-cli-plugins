@@ -2,8 +2,8 @@ use anyhow::{bail, Result};
 use bollard::errors::Error;
 use bollard::query_parameters::LogsOptionsBuilder;
 use bollard::Docker;
-use clap::{Parser, Subcommand};
-use docker_cli_plugins::{Metadata, METADATA_CMD};
+use clap::{CommandFactory, Parser, Subcommand};
+use docker_cli_plugins::{generate_completion, CompletionArgs, Metadata, METADATA_CMD};
 use futures_util::stream::TryStreamExt;
 use log::{debug, error, info, warn};
 use skim::options::SkimOptionsBuilder;
@@ -18,7 +18,7 @@ const METADATA: Metadata = Metadata {
 };
 
 #[derive(Parser)]
-#[command(about, version)]
+#[command(name = "docker-watch", about, version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -26,9 +26,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Get the plugin metadata
-    #[command(name = METADATA_CMD)]
-    Metadata,
     /// Watch for logs
     Watch {
         /// Query
@@ -38,6 +35,11 @@ enum Commands {
         #[arg(short, long)]
         tail: bool,
     },
+    /// Get the plugin metadata
+    #[command(name = METADATA_CMD)]
+    Metadata,
+    /// Generate shell completion
+    Completion(CompletionArgs),
 }
 
 #[tokio::main]
@@ -47,11 +49,15 @@ async fn main() -> Result<()> {
     let args = Cli::parse();
 
     match args.command {
+        Commands::Watch { query, tail } => watch_container_logs(query, tail).await,
         Commands::Metadata => {
             println!("{}", METADATA);
             Ok(())
         }
-        Commands::Watch { query, tail } => watch_container_logs(query, tail).await,
+        Commands::Completion(args) => {
+            generate_completion(Cli::command(), args.shell);
+            Ok(())
+        }
     }
 }
 

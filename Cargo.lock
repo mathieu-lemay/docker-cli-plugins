@@ -623,6 +623,7 @@ dependencies = [
  "anyhow",
  "bollard",
  "clap",
+ "clap_complete",
  "env_logger",
  "futures-util",
  "log",

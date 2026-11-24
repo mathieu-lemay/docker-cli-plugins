@@ -1,5 +1,8 @@
 use std::fmt::Display;
+use std::io;
 
+use clap::{Args, Command};
+use clap_complete::{generate, Shell};
 use log::LevelFilter;
 use serde_json::json;
 
@@ -32,4 +35,15 @@ impl Display for Metadata {
 
         write!(f, "{}", j)
     }
+}
+
+#[derive(Args)]
+pub struct CompletionArgs {
+    pub shell: Shell,
+}
+
+pub fn generate_completion(mut cmd: Command, shell: Shell) {
+    let name = cmd.get_name().to_string();
+
+    generate(shell, &mut cmd, name, &mut io::stdout());
 }
