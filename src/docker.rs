@@ -20,12 +20,9 @@ pub async fn find_containers<'a>(
 ) -> Result<Vec<String>> {
     let containers = get_container_names(d, options.all).await?;
 
-    let mut builder = SkimOptionsBuilder::default();
+    let mut builder = skim_options();
 
-    builder.height("50%");
     builder.multi(options.multi);
-    builder.select_1(true);
-    builder.reverse(true);
 
     if let Some(q) = options.query {
         builder.query(q);
@@ -83,12 +80,9 @@ pub struct FindImagesOptions<'a> {
 pub async fn find_images<'a>(d: &Docker, options: FindImagesOptions<'a>) -> Result<Vec<String>> {
     let images = get_image_tags(d).await?;
 
-    let mut builder = SkimOptionsBuilder::default();
+    let mut builder = skim_options();
 
-    builder.height("50%");
     builder.multi(options.multi);
-    builder.select_1(true);
-    builder.reverse(true);
 
     if let Some(q) = options.query {
         builder.query(q);
@@ -131,4 +125,19 @@ async fn get_image_tags(d: &Docker) -> Result<Vec<String>> {
     }
 
     Ok(tags)
+}
+
+fn skim_options() -> SkimOptionsBuilder {
+    let mut builder = SkimOptionsBuilder::default();
+
+    builder.height("50%");
+    builder.select_1(true);
+    builder.reverse(true);
+    builder.bind(vec![
+        "ctrl-a:select-all".to_string(),
+        "ctrl-d:deselect-all".to_string(),
+        "ctrl-t:toggle-all".to_string(),
+    ]);
+
+    builder
 }
