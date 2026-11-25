@@ -1,56 +1,35 @@
-use std::rc::Rc;
-
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use bollard::query_parameters::{ListContainersOptionsBuilder, ListImagesOptions};
 use bollard::Docker;
-use skim::options::SkimOptionsBuilder;
-use skim::{Selector, Skim, SkimItem};
 
-use crate::error::{NoContainersError, NoImagesError, NoSelectionError, Resource};
+use crate::error::{NoContainersError, NoImagesError};
+use crate::fzf::{fuzzy_search, SearchOptions};
 
 #[derive(Default)]
-pub struct FindContainersOptions<'a> {
-    pub query: Option<&'a str>,
+pub struct FindContainersOptions {
+    pub query: Option<String>,
     pub all: bool,
     pub multi: bool,
     pub pre_select: bool,
 }
 
-pub async fn find_containers<'a>(
-    d: &Docker,
-    options: FindContainersOptions<'a>,
-) -> Result<Vec<String>> {
-    let containers = get_container_names(d, options.all).await?;
-
-    let mut builder = skim_options();
-
-    builder.multi(options.multi);
-
-    if let Some(q) = options.query {
-        builder.query(q);
-
-        // Only pre-select when a query was provided
-        if options.pre_select {
-            builder.selector(Rc::new(AllItemsSelector {}));
+impl From<FindContainersOptions> for SearchOptions {
+    fn from(options: FindContainersOptions) -> Self {
+        SearchOptions {
+            query: options.query,
+            multi: options.multi,
+            pre_select: options.pre_select,
         }
     }
-
-    let options = builder.build()?;
-
-    let output = Skim::run_items(options, containers).map_err(|e| anyhow!(e))?;
-
-    if output.is_abort || output.selected_items.is_empty() {
-        bail!(NoSelectionError(Resource::Container));
-    }
-
-    Ok(output
-        .selected_items
-        .iter()
-        .map(|i| i.item.text().to_string())
-        .collect())
 }
 
-async fn get_container_names(d: &Docker, all: bool) -> Result<Vec<String>> {
+pub async fn find_containers(d: &Docker, options: FindContainersOptions) -> Result<Vec<String>> {
+    let containers = get_container_names(d, options.all).await?;
+
+    fuzzy_search(containers, options)
+}
+
+pub async fn get_container_names(d: &Docker, all: bool) -> Result<Vec<String>> {
     let opts = ListContainersOptionsBuilder::new().all(all).build();
 
     let containers = d.list_containers(Some(opts)).await?;
@@ -72,41 +51,26 @@ async fn get_container_names(d: &Docker, all: bool) -> Result<Vec<String>> {
 }
 
 #[derive(Default)]
-pub struct FindImagesOptions<'a> {
-    pub query: Option<&'a str>,
+pub struct FindImagesOptions {
+    pub query: Option<String>,
     pub multi: bool,
     pub pre_select: bool,
 }
 
-pub async fn find_images<'a>(d: &Docker, options: FindImagesOptions<'a>) -> Result<Vec<String>> {
-    let images = get_image_tags(d).await?;
-
-    let mut builder = skim_options();
-
-    builder.multi(options.multi);
-
-    if let Some(q) = options.query {
-        builder.query(q);
-
-        // Only pre-select when a query was provided
-        if options.pre_select {
-            builder.selector(Rc::new(AllItemsSelector {}));
+impl From<FindImagesOptions> for SearchOptions {
+    fn from(options: FindImagesOptions) -> Self {
+        SearchOptions {
+            query: options.query,
+            multi: options.multi,
+            pre_select: options.pre_select,
         }
     }
+}
 
-    let options = builder.build()?;
+pub async fn find_images(d: &Docker, options: FindImagesOptions) -> Result<Vec<String>> {
+    let images = get_image_tags(d).await?;
 
-    let output = Skim::run_items(options, images).map_err(|e| anyhow!(e))?;
-
-    if output.is_abort || output.selected_items.is_empty() {
-        bail!(NoSelectionError(Resource::Image));
-    }
-
-    Ok(output
-        .selected_items
-        .iter()
-        .map(|i| i.item.text().to_string())
-        .collect())
+    fuzzy_search(images, options)
 }
 
 async fn get_image_tags(d: &Docker) -> Result<Vec<String>> {
@@ -125,26 +89,4 @@ async fn get_image_tags(d: &Docker) -> Result<Vec<String>> {
     }
 
     Ok(tags)
-}
-
-struct AllItemsSelector {}
-impl Selector for AllItemsSelector {
-    fn should_select(&self, _: usize, _: &dyn SkimItem) -> bool {
-        true
-    }
-}
-
-fn skim_options() -> SkimOptionsBuilder {
-    let mut builder = SkimOptionsBuilder::default();
-
-    builder.height("50%");
-    builder.select_1(true);
-    builder.reverse(true);
-    builder.bind(vec![
-        "ctrl-a:select-all".to_string(),
-        "ctrl-d:deselect-all".to_string(),
-        "ctrl-t:toggle-all".to_string(),
-    ]);
-
-    builder
 }

@@ -99,7 +99,7 @@ async fn remove_containers(args: RemoveContainersArgs) -> Result<()> {
     let d = Docker::connect_with_defaults()?;
 
     let opts = FindContainersOptions {
-        query: args.query.as_deref(),
+        query: args.query,
         multi: true,
         pre_select: true,
         ..Default::default()
@@ -132,7 +132,7 @@ async fn remove_images(args: RemoveImagesArgs) -> Result<()> {
     let d = Docker::connect_with_defaults()?;
 
     let opts = FindImagesOptions {
-        query: args.query.as_deref(),
+        query: args.query,
         multi: true,
         pre_select: true,
     };

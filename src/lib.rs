@@ -1,5 +1,6 @@
 pub mod docker;
 pub mod error;
+pub mod fzf;
 pub mod prompt;
 
 use std::fmt::Display;

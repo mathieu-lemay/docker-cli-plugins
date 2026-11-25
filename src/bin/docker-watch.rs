@@ -3,11 +3,12 @@ use bollard::errors::Error;
 use bollard::query_parameters::LogsOptionsBuilder;
 use bollard::Docker;
 use clap::{CommandFactory, Parser, Subcommand};
+use docker_cli_plugins::docker::get_container_names;
+use docker_cli_plugins::error::{NoContainersError, NoSelectionError};
+use docker_cli_plugins::fzf::{fuzzy_search, SearchOptions};
 use docker_cli_plugins::{generate_completion, CompletionArgs, Metadata, METADATA_CMD};
 use futures_util::stream::TryStreamExt;
 use log::{debug, error, info, warn};
-use skim::options::SkimOptionsBuilder;
-use skim::Skim;
 use tokio::time;
 
 const METADATA: Metadata = Metadata {
@@ -121,48 +122,33 @@ async fn watch_container_logs(query: Option<String>, tail: bool) -> Result<()> {
 }
 
 async fn select_container(d: &Docker, query: Option<String>) -> Result<Option<String>> {
-    let q = query.unwrap_or_default();
-
     loop {
-        let containers = d.list_containers(None).await?;
-        if containers.is_empty() {
-            debug!("No running containers, waiting");
-            time::sleep(time::Duration::from_secs(1)).await;
-            continue;
-        }
+        let names = match get_container_names(d, false).await {
+            Ok(n) => n,
+            Err(e) if e.is::<NoContainersError>() => {
+                warn!("No running containers, waiting");
+                time::sleep(time::Duration::from_secs(1)).await;
+                continue;
+            }
+            Err(e) => {
+                bail!(e)
+            }
+        };
 
-        let names = containers.iter().fold(Vec::new(), |mut v, i| {
-            if let Some(names) = &i.names {
-                for n in names {
-                    v.push(n.trim_start_matches("/").to_string());
-                }
-            };
+        let opts = SearchOptions {
+            query: query.clone(),
+            multi: false,
+            ..Default::default()
+        };
 
-            v
-        });
-
-        let options = SkimOptionsBuilder::default()
-            .height("50%")
-            .select_1(true)
-            // .exit_0(true)
-            .reverse(true)
-            .query(&q)
-            .popup("center,75%,75%")
-            .popup_name("docker watch")
-            .build()?;
-
-        let result = Skim::run_items(options, names).map(|out| out.selected_items);
-
-        let selected_items = match result {
+        let mut selected_items = match fuzzy_search(names, opts) {
             Ok(i) => i,
+            Err(e) if e.is::<NoSelectionError>() => {
+                return Ok(None);
+            }
             Err(e) => bail!(e),
         };
 
-        if let Some(i) = selected_items.first() {
-            return Ok(Some(i.item.text().to_string()));
-        }
-
-        debug!("No matching containers, waiting");
-        time::sleep(time::Duration::from_secs(1)).await;
+        return Ok(selected_items.pop());
     }
 }

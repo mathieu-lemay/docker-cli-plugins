@@ -22,17 +22,11 @@ impl Display for NoImagesError {
 }
 
 #[derive(Debug)]
-pub enum Resource {
-    Container,
-    Image,
-}
-
-#[derive(Debug)]
-pub struct NoSelectionError(pub Resource);
+pub struct NoSelectionError;
 impl Error for NoSelectionError {}
 
 impl Display for NoSelectionError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "No {:?} selected.", self.0)
+        write!(f, "No selection")
     }
 }
