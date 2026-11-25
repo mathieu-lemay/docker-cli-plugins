@@ -1,8 +1,10 @@
-use anyhow::{bail, Result};
+use std::rc::Rc;
+
+use anyhow::{anyhow, bail, Result};
 use bollard::query_parameters::{ListContainersOptionsBuilder, ListImagesOptions};
 use bollard::Docker;
 use skim::options::SkimOptionsBuilder;
-use skim::Skim;
+use skim::{Selector, Skim, SkimItem};
 
 use crate::error::{NoContainersError, NoImagesError, NoSelectionError, Resource};
 
@@ -29,24 +31,23 @@ pub async fn find_containers<'a>(
 
         // Only pre-select when a query was provided
         if options.pre_select {
-            builder.pre_select_n(containers.len());
+            builder.selector(Rc::new(AllItemsSelector {}));
         }
     }
 
     let options = builder.build()?;
 
-    let result = Skim::run_items(options, containers).map(|out| out.selected_items);
+    let output = Skim::run_items(options, containers).map_err(|e| anyhow!(e))?;
 
-    match result {
-        Ok(i) => {
-            if i.is_empty() {
-                bail!(NoSelectionError(Resource::Container));
-            }
-
-            Ok(i.iter().map(|i| i.item.text().to_string()).collect())
-        }
-        Err(e) => bail!(e),
+    if output.is_abort || output.selected_items.is_empty() {
+        bail!(NoSelectionError(Resource::Container));
     }
+
+    Ok(output
+        .selected_items
+        .iter()
+        .map(|i| i.item.text().to_string())
+        .collect())
 }
 
 async fn get_container_names(d: &Docker, all: bool) -> Result<Vec<String>> {
@@ -89,24 +90,23 @@ pub async fn find_images<'a>(d: &Docker, options: FindImagesOptions<'a>) -> Resu
 
         // Only pre-select when a query was provided
         if options.pre_select {
-            builder.pre_select_n(images.len());
+            builder.selector(Rc::new(AllItemsSelector {}));
         }
     }
 
     let options = builder.build()?;
 
-    let result = Skim::run_items(options, images).map(|out| out.selected_items);
+    let output = Skim::run_items(options, images).map_err(|e| anyhow!(e))?;
 
-    match result {
-        Ok(i) => {
-            if i.is_empty() {
-                bail!(NoSelectionError(Resource::Image));
-            }
-
-            Ok(i.iter().map(|i| i.item.text().to_string()).collect())
-        }
-        Err(e) => bail!(e),
+    if output.is_abort || output.selected_items.is_empty() {
+        bail!(NoSelectionError(Resource::Image));
     }
+
+    Ok(output
+        .selected_items
+        .iter()
+        .map(|i| i.item.text().to_string())
+        .collect())
 }
 
 async fn get_image_tags(d: &Docker) -> Result<Vec<String>> {
@@ -125,6 +125,13 @@ async fn get_image_tags(d: &Docker) -> Result<Vec<String>> {
     }
 
     Ok(tags)
+}
+
+struct AllItemsSelector {}
+impl Selector for AllItemsSelector {
+    fn should_select(&self, _: usize, _: &dyn SkimItem) -> bool {
+        true
+    }
 }
 
 fn skim_options() -> SkimOptionsBuilder {
