@@ -48,7 +48,15 @@ enum FzfCommand {
 
     /// Remove Image(s)
     #[command(name = "rmi")]
-    RemoveImages(RemoveImagesArgs),
+    RemoveImages(BaseCommandArgs),
+
+    /// Restart Container(s)
+    #[command(name = "restart")]
+    RestartContainers(BaseCommandArgs),
+
+    /// Kill Container(s)
+    #[command(name = "kill")]
+    KillContainers(BaseCommandArgs),
 }
 
 #[derive(Args)]
@@ -67,7 +75,7 @@ struct RemoveContainersArgs {
 }
 
 #[derive(Args)]
-struct RemoveImagesArgs {
+struct BaseCommandArgs {
     /// Initial fzf query
     #[arg()]
     query: Option<String>,
@@ -83,6 +91,8 @@ async fn main() -> Result<()> {
         Commands::FuzzyFind(cmd) => match cmd {
             FzfCommand::RemoveContainers(args) => remove_containers(args).await,
             FzfCommand::RemoveImages(args) => remove_images(args).await,
+            FzfCommand::RestartContainers(args) => restart_containers(args).await,
+            FzfCommand::KillContainers(args) => kill_containers(args).await,
         },
         Commands::Metadata => {
             println!("{}", METADATA);
@@ -100,9 +110,9 @@ async fn remove_containers(args: RemoveContainersArgs) -> Result<()> {
 
     let opts = FindContainersOptions {
         query: args.query,
+        all: true,
         multi: true,
         pre_select: true,
-        ..Default::default()
     };
 
     let containers = find_containers(&d, opts).await?;
@@ -128,7 +138,7 @@ async fn remove_containers(args: RemoveContainersArgs) -> Result<()> {
     Ok(())
 }
 
-async fn remove_images(args: RemoveImagesArgs) -> Result<()> {
+async fn remove_images(args: BaseCommandArgs) -> Result<()> {
     let d = Docker::connect_with_defaults()?;
 
     let opts = FindImagesOptions {
@@ -150,6 +160,62 @@ async fn remove_images(args: RemoveImagesArgs) -> Result<()> {
     for i in images {
         debug!("Removing image: {}", i);
         d.remove_image(&i, None::<RemoveImageOptions>, None).await?;
+    }
+
+    Ok(())
+}
+
+async fn restart_containers(args: BaseCommandArgs) -> Result<()> {
+    let d = Docker::connect_with_defaults()?;
+
+    let opts = FindContainersOptions {
+        query: args.query,
+        multi: true,
+        pre_select: true,
+        ..Default::default()
+    };
+
+    let containers = find_containers(&d, opts).await?;
+
+    info!("Selected container: \n  {}", containers.join("\n  "));
+
+    let confirm = prompt_yes_no("Restart container(s)", true);
+
+    if !confirm {
+        return Ok(());
+    }
+
+    for c in containers {
+        debug!("Restarting container: {}", c);
+        d.restart_container(&c, None).await?;
+    }
+
+    Ok(())
+}
+
+async fn kill_containers(args: BaseCommandArgs) -> Result<()> {
+    let d = Docker::connect_with_defaults()?;
+
+    let opts = FindContainersOptions {
+        query: args.query,
+        multi: true,
+        pre_select: true,
+        ..Default::default()
+    };
+
+    let containers = find_containers(&d, opts).await?;
+
+    info!("Selected container: \n  {}", containers.join("\n  "));
+
+    let confirm = prompt_yes_no("Kill container(s)", true);
+
+    if !confirm {
+        return Ok(());
+    }
+
+    for c in containers {
+        debug!("Killing container: {}", c);
+        d.kill_container(&c, None).await?;
     }
 
     Ok(())
